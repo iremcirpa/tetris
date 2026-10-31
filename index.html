@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tetris 100</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background: #241b1b;
+    color: white;
+    font-family: Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+
+.container {
+    text-align: center;
+    max-width: 450px;
+    width: 100%;
+}
+
+h1 {
+    font-size: 42px;
+    color: #ffcf33;
+    margin-bottom: 5px;
+}
+
+.subtitle {
+    color: #ffc1a0;
+    margin-bottom: 20px;
+}
+
+.score-box {
+    display: flex;
+    justify-content: space-around;
+    background: #382727;
+    padding: 14px;
+    border-radius: 12px;
+    margin-bottom: 15px;
+}
+
+.score-box strong {
+    display: block;
+    color: #ffcf33;
+    font-size: 24px;
+    margin-top: 5px;
+}
+
+.game-area {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+}
+
+canvas {
+    display: block;
+    width: min(300px, 100%);
+    height: auto;
+    background: #171313;
+    border: 3px solid #ff963b;
+    border-radius: 8px;
+}
+
+.overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(20, 10, 10, 0.92);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    border-radius: 8px;
+}
+
+.overlay h2 {
+    color: #ffcf33;
+    font-size: 30px;
+}
+
+button {
+    border: none;
+    border-radius: 10px;
+    padding: 13px 22px;
+    background: #ff963b;
+    color: #251515;
+    font-weight: bold;
+    font-size: 16px;
+    cursor: pointer;
+    margin-top: 15px;
+}
+
+button:hover {
+    background: #ffcf33;
+}
+
+.controls {
+    margin-top: 20px;
+    display: grid;
+    grid-template-columns: repeat(3, 65px);
+    justify-content: center;
+    gap: 8px;
+}
+
+.controls button {
+    margin: 0;
+    font-size: 22px;
+    padding: 12px;
+    touch-action: manipulation;
+}
+
+.instructions {
+    color: #d9b9a5;
+    font-size: 13px;
+    margin-top: 18px;
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>🟠 TETRIS 100</h1>
+    <p class="subtitle">10 satır tamamla, 100 puana ulaş!</p>
+
+    <div class="score-box">
+        <div>
+            PUAN
+            <strong id="score">0</strong>
+        </div>
+
+        <div>
+            HEDEF
+            <strong>100</strong>
+        </div>
+    </div>
+
+    <div class="game-area">
+
+        <canvas id="game" width="300" height="600"></canvas>
+
+        <div class="overlay" id="overlay">
+            <h2 id="result">TEBRİKLER!</h2>
+            <p id="message">100 puana ulaştın!</p>
+            <button onclick="restartGame()">YENİDEN OYNA</button>
+        </div>
+
+    </div>
+
+    <div class="controls">
+        <span></span>
+        <button onclick="rotate()">↻</button>
+        <span></span>
+
+        <button onclick="move(-1)">⬅</button>
+        <button onclick="drop()">⬇</button>
+        <button onclick="move(1)">➡</button>
+    </div>
+
+    <p class="instructions">
+        Klavye: ← → hareket | ↑ döndür | ↓ hızlandır
+    </p>
+
+    <button onclick="restartGame()">OYUNU YENİDEN BAŞLAT</button>
+
+</div>
+
+<script>
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const COLS = 10;
+const ROWS = 20;
+const SIZE = 30;
+
+const colors = [
+    null,
+    "#ff3b30",
+    "#ffcf33",
+    "#ff963b"
+];
+
+const shapes = [
+    [[1,1,1,1]],
+    [[2,2],[2,2]],
+    [[0,3,0],[3,3,3]],
+    [[1,0,0],[1,1,1]],
+    [[0,0,2],[2,2,2]],
+    [[3,3,0],[0,3,3]],
+    [[0,3,3],[3,3,0]]
+];
+
+let board;
+let player;
+let score = 0;
+let gameOver = false;
+let lastTime = 0;
+let dropCounter = 0;
+let animationId;
+
+function createBoard() {
+    return Array.from(
+        {length: ROWS},
+        () => Array(COLS).fill(0)
+    );
+}
+
+function newPiece() {
+    const shape = shapes[
+        Math.floor(Math.random() * shapes.length)
+    ].map(row => [...row]);
+
+    return {
+        matrix: shape,
+        x: Math.floor((COLS - shape[0].length) / 2),
+        y: 0
+    };
+}
+
+function drawMatrix(matrix, offset) {
+    matrix.forEach((row, y) => {
+        row.forEach((value, x) => {
+
+            if (value !== 0) {
+                ctx.fillStyle = colors[value];
+
+                ctx.fillRect(
+                    (x + offset.x) * SIZE,
+                    (y + offset.y) * SIZE,
+                    SIZE - 1,
+                    SIZE - 1
+                );
+            }
+
+        });
+    });
+}
+
+function draw() {
+    ctx.fillStyle = "#171313";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    drawMatrix(board, {x: 0, y: 0});
+
+    drawMatrix(player.matrix, player);
+}
+
+function collide() {
+    const matrix = player.matrix;
+
+    for (let y = 0; y < matrix.length; y++) {
+        for (let x = 0; x < matrix[y].length; x++) {
+
+            if (matrix[y][x] !== 0) {
+
+                const newX = x + player.x;
+                const newY = y + player.y;
+
+                if (
+                    newX < 0 ||
+                    newX >= COLS ||
+                    newY >= ROWS ||
+                    (newY >= 0 && board[newY][newX] !== 0)
+                ) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+function merge() {
+    player.matrix.forEach((row, y) => {
+        row.forEach((value, x) => {
+
+            if (value !== 0) {
+                board[y + player.y][x + player.x] = value;
+            }
+
+        });
+    });
+}
+
+function clearLines() {
+
+    let lines = 0;
+
+    outer:
+    for (let y = ROWS - 1; y >= 0; y--) {
+
+        for (let x = 0; x < COLS; x++) {
+            if (board[y][x] === 0) {
+                continue outer;
+            }
+        }
+
+        board.splice(y, 1);
+        board.unshift(Array(COLS).fill(0));
+
+        lines++;
+        y++;
+    }
+
+    score += lines * 10;
+
+    document.getElementById("score").textContent = score;
+
+    if (score >= 100) {
+        endGame(true);
+    }
+}
+
+function lockPiece() {
+
+    merge();
+
+    clearLines();
+
+    if (gameOver) return;
+
+    player = newPiece();
+
+    if (collide()) {
+        endGame(false);
+    }
+}
+
+function move(direction) {
+
+    if (gameOver) return;
+
+    player.x += direction;
+
+    if (collide()) {
+        player.x -= direction;
+    }
+
+    draw();
+}
+
+function drop() {
+
+    if (gameOver) return;
+
+    player.y++;
+
+    if (collide()) {
+        player.y--;
+        lockPiece();
+    }
+
+    dropCounter = 0;
+    draw();
+}
+
+function rotate() {
+
+    if (gameOver) return;
+
+    const matrix = player.matrix;
+
+    const rotated = matrix[0].map(
+        (_, i) => matrix.map(row => row[i]).reverse()
+    );
+
+    const previous = player.matrix;
+
+    player.matrix = rotated;
+
+    if (collide()) {
+        player.matrix = previous;
+    }
+
+    draw();
+}
+
+function update(time = 0) {
+
+    if (gameOver) return;
+
+    const delta = time - lastTime;
+    lastTime = time;
+
+    dropCounter += delta;
+
+    if (dropCounter > 650) {
+        drop();
+    }
+
+    draw();
+
+    animationId = requestAnimationFrame(update);
+}
+
+function endGame(won) {
+
+    gameOver = true;
+
+    cancelAnimationFrame(animationId);
+
+    document.getElementById("overlay").style.display = "flex";
+
+    document.getElementById("result").textContent =
+        won ? "🎉 KAZANDIN!" : "OYUN BİTTİ!";
+
+    document.getElementById("message").textContent =
+        won
+        ? "Harika! 100 puana ulaştın!"
+        : "Bir kez daha denemek ister misin?";
+}
+
+function restartGame() {
+
+    cancelAnimationFrame(animationId);
+
+    board = createBoard();
+    player = newPiece();
+
+    score = 0;
+    gameOver = false;
+    lastTime = 0;
+    dropCounter = 0;
+
+    document.getElementById("score").textContent = "0";
+
+    document.getElementById("overlay").style.display = "none";
+
+    update();
+}
+
+document.addEventListener("keydown", event => {
+
+    if (gameOver) return;
+
+    if ([
+        "ArrowLeft",
+        "ArrowRight",
+        "ArrowDown",
+        "ArrowUp"
+    ].includes(event.key)) {
+        event.preventDefault();
+    }
+
+    if (event.key === "ArrowLeft") move(-1);
+    if (event.key === "ArrowRight") move(1);
+    if (event.key === "ArrowDown") drop();
+    if (event.key === "ArrowUp") rotate();
+
+});
+
+restartGame();
+
+</script>
+
+</body>
+</html>
